@@ -1,0 +1,83 @@
+<pre>
+# --- Mysql Base source config ---
+source local_mysql
+{
+    type               = mysql
+    sql_host           = 127.0.0.1
+    sql_user           = root
+    sql_pass           = root
+    sql_db             = local
+    sql_port           = 3306
+    sql_query_pre      = SET SESSION query_cache_type=OFF
+    sql_query_pre      = SET character_set_results ='utf8'
+    sql_query_pre      = SET NAMES utf8
+}
+
+# --- {$table} sphinx config ---
+source source_{$prefix}{$model_name}_main : local_mysql
+{
+    sql_query_pre   = SET NAMES utf8
+    sql_query_pre   = REPLACE INTO sph_counter SELECT {$model_id}, MAX(id) FROM {$table} 
+    sql_range_step  = 1000
+    sql_query_range = SELECT MIN(id),MAX(id) FROM {$table} 
+    sql_query       = SELECT {$select_field} FROM {$table} \
+                       WHERE id >= $start AND id <= $end
+    <foreach name="attribute_array" item="attribute" key="attr">
+        <notempty name="attribute">
+            <volist name="attribute" id="vo">
+    {$attr} = {$vo} <?php echo "\n    "; ?>
+            </volist>
+        </notempty>
+    </foreach>
+
+    sql_query_info_pre = SET NAMES utf8
+    sql_query_info     = SELECT * FROM {$table} WHERE id=$id
+}
+
+index {$prefix}{$model_name}
+{
+    source       = source_{$prefix}{$model_name}_main
+    path         = /usr/local/coreseek/var/data/{$model_name}  
+    docinfo      = extern
+    mlock        = 0
+    morphology   = none
+    min_word_len = 1
+    html_strip   = 0
+    charset_dictpath  = /usr/local/mmseg3/etc/
+    charset_type = zh_cn.utf-8
+}
+
+# --- {$table} sphinx delta config ---
+source source_{$prefix}{$model_name}_delta : source_{$prefix}{$model_name}_main
+{  
+    sql_query_pre = SET NAMES utf8
+    sql_query     = SELECT {$select_field} FROM {$table} WHERE deleted_at > 0 AND \
+                    id >= $start AND id <= $end AND \
+                    id > (SELECT max_doc_id FROM sph_counter WHERE counter_id={$model_id})
+    sql_query_post_index = REPLACE INTO sph_counter SELECT {$model_id}, MAX(id) FROM {$table} 
+}
+
+index {$prefix}{$model_name}_delta : {$prefix}{$model_name} 
+{  
+    source = source_{$prefix}{$model_name}_delta
+    path    = /usr/local/coreseek/var/data/{$model_name}_delta
+}
+
+# --重建主索引和增量索引--
+/usr/local/coreseek/bin/indexer --config /usr/local/coreseek/etc/csft.conf --rotate {$prefix}{$model_name} 
+/usr/local/coreseek/bin/indexer --config /usr/local/coreseek/etc/csft.conf --rotate {$prefix}{$model_name}_delta
+
+# --合并建主索引和增量索引--
+/usr/local/coreseek/bin/indexer --config /usr/local/coreseek/etc/csft.conf --merge {$prefix}{$model_name} {$prefix}{$model_name}_delta --merge-dst-range deleted 0 0 --rotate
+
+# -- 重建整个索引 --
+/usr/local/coreseek/bin/indexer --config /usr/local/coreseek/etc/csft.conf --rotate --all
+
+# -- 每隔五分钟执行一遍增量索引 --
+*/5 * * * * /bin/sh /usr/local/coreseek/bin/indexer -c /usr/local/coreseek/etc/csft.conf {$prefix}{$model_name}_delta --rotate
+# -- 每隔三十分钟执行一遍增量索引 --
+*/30 * * * * /bin/sh /usr/local/coreseek/bin/indexer -c /usr/local/coreseek/etc/csft.conf --merge {$prefix}{$model_name} {$prefix}{$model_name}_delta --rotate --merge-dst-range deleted 0 0
+# -- 每天1:30执行整体索引 --
+30 1 * * *  /bin/sh /usr/local/coreseek/bin/indexer -c /usr/local/coreseek/etc/csft.conf --all --rotate 
+
+</pre>
