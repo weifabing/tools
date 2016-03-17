@@ -1,0 +1,86 @@
+    public function sphinx()
+    {
+        $fields_info     = $this->_BASE_MODEL->get_fields_info();    //获取所有字段信息
+        $search_keyword  = $this->_BASE_MODEL->get_search_keyword(); //获取所有字段信息
+        $table           = $this->_BASE_MODEL->get_class_vars("trueTableName");//真实表名
+        $model_name      = $this->_BASE_MODEL->get_class_vars("name"); //模型名称
+        $search_fields   = $this->_BASE_MODEL->get_search_fields();//获取模型里的可搜索字段
+        $database        = C('DB_NAME');
+        $prefix = I('request.prefix', $database). '_';
+
+        $select = array($this->_BASE_MODEL->getpk());
+        foreach ($search_keyword as $key => $field)
+        {
+            $select[] = $field;
+        }
+
+        // sphinx 属性可用属性数组
+        $attribute = array(
+            'sql_attr_timestamp', // 时间戳属性
+            'sql_attr_uint',      // 无符号整数属性
+            'sql_attr_bool',      // 布尔属性
+            'sql_attr_bigint',    // 64位整数属性
+            'sql_attr_str2ordinal', // 声明字符串序数属性
+            'sql_attr_float',       // 声明浮点型属性
+            'sql_attr_multi',       // 声明多值属性
+        );
+        $attribute_array = array();
+
+        // 搜索查询字段
+        foreach ($search_fields as $field => $field_info)
+        {
+            if (!in_array($field, $select))
+            {
+                $sql = "SELECT column_name,column_comment,data_type FROM information_schema.columns WHERE table_name='{$table}' AND table_schema = '{$database}' AND column_name='{$field}'";
+                $info = $this->_BASE_MODEL->query($sql);
+                $data_type = empty($info[0])?'':$info[0]['data_type'];
+                if (empty($data_type))
+                {
+                    continue;
+                }
+                $types = array('int', 'tinyint', 'smallint');
+                if( in_array($data_type, $types))
+                {
+                    $attribute_array['sql_attr_uint'][] = $field;
+                }
+                $select[] = $field;
+            }
+        }
+
+        if (array_key_exists('pinyin_all', $fields_info)) 
+        {
+            $select[] = 'pinyin_all';
+        }
+        if (array_key_exists('pinyin_first', $fields_info))
+        {
+            $select[] = 'pinyin_first';
+        }
+        if (array_key_exists('deleted_at', $fields_info))
+        {
+            $attribute_array['sql_attr_timestamp'][] = 'deleted_at';
+            $select[] = 'deleted_at';
+        }
+        $select_field = implode(',', $select);
+        // 搜索字段
+        $this->assign('select_field', $select_field);
+        
+        // 模型代表编号
+        $model_id = I('request.id');
+        if (empty($model_id)) {
+            $model_id = rand(1000,9999);
+        }
+        $this->assign('model_id', $model_id);
+        
+        // 搜索表名
+        $this->assign('table', $table);
+
+        // 模型名称
+        $this->assign('model_name', $model_name);
+
+        // 属性数组
+        $this->assign('attribute_array', $attribute_array);
+        // 配置前缀
+        $this->assign('prefix', $prefix);
+
+        $this->display('Public:sphinx_config');
+    }
