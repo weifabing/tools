@@ -1,0 +1,33 @@
+@echo off
+set RSYNC="D:\soft\cwRsync_5.5.0_x86_Free\bin\rsync.exe"
+goto chown
+
+rem 同步文件
+:rsync
+rsync ^
+--verbose ^
+--archive ^
+--delete ^
+-z ^
+--copy-links ^
+--chmod=ugo=rwX ^
+--no-perms ^
+--no-owner ^
+--no-group ^
+--rsync-path "sudo rsync" ^
+--rsh "ssh -p 2222 -o LogLevel=FATAL -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i 'E:/Nodejs/vbox/.vagrant/machines/default/virtualbox/private_key'" ^
+--exclude ".svn" ^
+--exclude ".vagrant" ^
+"/e/webroot/dingding/" "vagrant@127.0.0.1:/home/vagrant/ddtalk"
+goto chown
+
+rem 修改用户属主
+:chown
+set chown_cmd="sudo find /home/vagrant/ddtalk -path /home/vagrant/ddtalk/.svn/ -prune -o '!' -type l -a '(' ! -user vagrant -or ! -group vagrant ')' -exec chown vagrant:vagrant '{}' + "
+ssh -p 2222 -l vagrant 127.0.0.1 -i 'E:/Nodejs/vbox/.vagrant/machines/default/virtualbox/private_key' %chown_cmd%
+goto sleep
+
+:sleep
+ping 127.0.0.1 -n 5 >null
+rem pause
+goto rsync
